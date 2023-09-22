@@ -1,4 +1,7 @@
 use pyo3::prelude::*;
+// use numpy::ndarray::ArrayViewD;
+use numpy::{dot, PyArray2};
+use ndarray::{Array2, ArrayView2};
 
 /// Formats the sum of two numbers as string.
 #[pyfunction]
@@ -10,11 +13,10 @@ pub struct State {
     a: Vec<f64>,
     b: f64,
     violation: f64,
+    value: f64,
     ka: Vec<f64>,
     g: Vec<f64>,
     active_set: Vec<usize>,
-    // d_dn: Vec<f64>,
-    // d_up: Vec<f64>,
 }
 
 pub trait Problem {
@@ -24,6 +26,34 @@ pub trait Problem {
     fn lb(&self, i: usize) -> f64;
     fn ub(&self, i: usize) -> f64;
     fn sign(&self, i: usize) -> f64;
+    fn is_optimal(&self, state: &State, tol: f64) -> bool;
+}
+
+pub trait Kernel {
+    fn row(&mut self, i: usize) -> &[f64];
+    fn diag(&mut self, i: usize) -> f64;
+}
+
+struct GaussianKernel {
+    data: Array2<f64>,
+    xsqr: Vec<f64>,
+}
+
+impl Kernel for GaussianKernel {
+    fn row(&mut self, i: usize) -> &[f64] {
+        let [n, nft] = self.data.shape();
+        let mut ki = Vec::new();
+        let xsqri = self.xsqr[i];
+        let xi = self.data.column(i);
+        for j in 0..*n {
+            let xj = self.data.column(j);
+            ki[j] = xsqri + self.xsqr[j] - 2.0 * xi.dot(&xj);
+        }
+        &ki
+    }
+    fn diag(&mut self, i: usize) -> f64 {
+        1.0
+    }
 }
 
 pub struct Classification {
@@ -53,6 +83,10 @@ impl Problem for Classification {
     }
     fn sign(&self, i: usize) -> f64 {
         if self.y[i] > 0.0 { 1.0 } else {-1.0}
+    }
+
+    fn is_optimal(&self, state: &State, tol: f64) -> bool {
+        self.lambda * state.violation < tol
     }
 }
 
@@ -85,25 +119,68 @@ fn find_mvp(problem: &dyn Problem, state: &mut State) -> (usize, usize) {
     (idx_i, idx_j)
 }
 
+pub struct Result {
+    a: Vec<f64>,
+    b: f64,
+    value: f64,
+    steps: i32,
+}
+
+fn update(problem: &dyn Problem, kernel: &mut dyn Kernel, idx_i: usize, idx_j: usize, state: &mut State) {
+    let i = state.active_set[idx_i];
+    let j = state.active_set[idx_j];
+    let ki = kernel.row(i);
+    let kj = kernel.row(j);
+    let pij = state.g[i] - state.g[j];
+    let qij = ki[idx_i] + kj[idx_j] - 2.0 * ki[idx_j] + problem.quad(state, i) + problem.quad(state, j);
+}
+
 pub fn solve(
     problem: &dyn Problem,
+    kernel: &mut dyn Kernel,
     tol: f64,
     max_steps: i32,
-) {
+    verbose: i32,
+) -> Result {
+    let mut result = Result {
+        a: vec![],
+        b: f64::NAN,
+        value: 0.0,
+        steps: 0,
+    };
     let n = problem.size();
     let mut state = State {
         a: vec![0.0; n],
         b: 0.0,
         violation: f64::INFINITY,
+        value: 0.0,
         ka: vec![0.0; n],
         g: vec![0.0; n],
         active_set: (0..n).collect(),
     };
 
     for step in 1..=max_steps {
+        // TODO: check time limit
+        // TODO: callback
+        // TODO: shrinking
         let (idx_i0, idx_j1) = find_mvp(problem, &mut state);
-        let optimal = problem.lambda * state.violation < tol;
+        let optimal = problem.is_optimal(&state, tol);
+        
+        if verbose > 0 && (step % verbose == 0 || optimal) {
+            println!("{:10} {:10.6} {:10}", step, state.violation, state.value)
+        }
+        
+        if optimal {
+            // TOOD: check shrinking
+            result.steps = step;
+            break;
+        }
+
+        // TODO: 2nd order
+        let (idx_i, idx_j) = (idx_i0, idx_j1);
+        update(problem, kernel, idx_i, idx_j, &mut state);
     }
+    return result
 }
 
 /// A Python module implemented in Rust.
