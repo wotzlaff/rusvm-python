@@ -41,7 +41,9 @@ struct GaussianKernel {
 
 impl Kernel for GaussianKernel {
     fn row(&mut self, i: usize) -> &[f64] {
-        let [n, nft] = self.data.shape();
+        let [n, nft] = self.data.shape() else {
+            panic!("x has bad shape");
+        };
         let mut ki = Vec::new();
         let xsqri = self.xsqr[i];
         let xi = self.data.column(i);
