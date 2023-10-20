@@ -6,20 +6,11 @@ use pyo3::types::PyDict;
 pub struct State {
     a: Vec<f64>,
     b: f64,
+    c: f64,
     violation: f64,
     value: f64,
     ka: Vec<f64>,
     g: Vec<f64>,
-    active_set: Vec<usize>,
-}
-
-impl State {
-    fn is_shrunk(&self) -> bool {
-        self.active_set.len() < self.a.len()
-    }
-
-    fn shrink(&mut self, problem: &impl Problem, shrinking_threshold: f64) {}
-    fn unshrink(&mut self, problem: &impl Problem) {}
 }
 
 pub trait Problem {
@@ -33,11 +24,60 @@ pub trait Problem {
 
     fn get_lambda(&self) -> f64;
     fn get_regularization(&self) -> f64;
+
+    fn is_shrunk(&self, state: &State, active_set: &Vec<usize>) -> bool {
+        active_set.len() < state.a.len()
+    }
+
+    fn shrink(
+        &self,
+        kernel: &mut impl Kernel,
+        state: &State,
+        active_set: &mut Vec<usize>,
+        threshold: f64,
+    ) {
+        let new_active_set = active_set
+            .to_vec()
+            .into_iter()
+            .filter(|&k| {
+                let gkb = state.g[k] + state.b + state.c * self.sign(k);
+                let gkb_sqr = gkb * gkb;
+                gkb_sqr <= threshold * state.violation
+                    || !(state.a[k] == self.ub(k) && gkb < 0.0
+                        || state.a[k] == self.lb(k) && gkb > 0.0)
+            })
+            .collect();
+        kernel.restrict_active(&active_set, &new_active_set);
+        *active_set = new_active_set;
+    }
+    fn unshrink(&self, kernel: &mut impl Kernel, state: &mut State, active_set: &mut Vec<usize>) {
+        let lambda = self.get_lambda();
+        let n = self.size();
+        let new_active_set = (0..n).collect();
+        kernel.set_active(&active_set, &new_active_set);
+        *active_set = new_active_set;
+
+        state.ka.fill(0.0);
+        for (i, &ai) in state.a.iter().enumerate() {
+            if ai == 0.0 {
+                continue;
+            }
+            kernel.use_rows([i].to_vec(), &active_set, &mut |ki_vec: Vec<&[f64]>| {
+                let ki = ki_vec[0];
+                for k in 0..n {
+                    state.ka[k] += ai / lambda * ki[k];
+                }
+            })
+        }
+    }
 }
 
 pub trait Kernel {
-    fn use_rows(&self, idxs: Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>));
+    fn use_rows(&self, idxs: Vec<usize>, active_set: &Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>));
     fn diag(&self, i: usize) -> f64;
+
+    fn restrict_active(&mut self, _old: &Vec<usize>, _new: &Vec<usize>) {}
+    fn set_active(&mut self, _old: &Vec<usize>, _new: &Vec<usize>) {}
 }
 
 struct GaussianKernel<'a> {
@@ -61,13 +101,13 @@ impl<'a> GaussianKernel<'a> {
         }
         GaussianKernel { gamma, data, xsqr }
     }
-    fn compute_row(&self, i: usize, ki: &mut [f64]) {
+    fn compute_row(&self, i: usize, ki: &mut [f64], active_set: &Vec<usize>) {
         let &[n, _nft] = self.data.shape() else {
             panic!("x has bad shape");
         };
         let xsqri = self.xsqr[i];
         let xi = self.data.row(i);
-        for j in 0..n {
+        for &j in active_set.iter() {
             let xj = self.data.row(j);
             let dij = xsqri + self.xsqr[j] - 2.0 * xi.dot(&xj);
             (*ki)[j] = (-self.gamma * dij).exp();
@@ -76,12 +116,17 @@ impl<'a> GaussianKernel<'a> {
 }
 
 impl Kernel for GaussianKernel<'_> {
-    fn use_rows(&self, idxs: Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>)) {
+    fn use_rows(
+        &self,
+        idxs: Vec<usize>,
+        active_set: &Vec<usize>,
+        fun: &mut dyn FnMut(Vec<&[f64]>),
+    ) {
         let mut kidxs = Vec::with_capacity(2);
         for &idx in &idxs {
             // TODO: active set
             let mut kidx = vec![0.0; self.data.shape()[0]];
-            self.compute_row(idx, &mut kidx);
+            self.compute_row(idx, &mut kidx, active_set);
             kidxs.push(kidx);
         }
         fun(kidxs.iter().map(|ki| ki.as_slice()).collect());
@@ -148,13 +193,14 @@ impl Problem for Classification {
 fn find_mvp_signed(
     problem: &impl Problem,
     state: &mut State,
+    active_set: &Vec<usize>,
     sign: f64,
 ) -> (f64, f64, usize, usize) {
     let mut g_min = f64::INFINITY;
     let mut g_max = f64::NEG_INFINITY;
     let mut idx_i: usize = 0;
     let mut idx_j: usize = 0;
-    for (idx, &i) in state.active_set.iter().enumerate() {
+    for (idx, &i) in active_set.iter().enumerate() {
         let g_i = problem.grad(state, i);
         state.g[i] = g_i;
         if problem.sign(i) * sign >= 0.0 {
@@ -171,8 +217,8 @@ fn find_mvp_signed(
     (g_max - g_min, g_max + g_min, idx_i, idx_j)
 }
 
-fn find_mvp(problem: &impl Problem, state: &mut State) -> (usize, usize) {
-    let (dij, sij, idx_i, idx_j) = find_mvp_signed(problem, state, 0.0);
+fn find_mvp(problem: &impl Problem, state: &mut State, active_set: &Vec<usize>) -> (usize, usize) {
+    let (dij, sij, idx_i, idx_j) = find_mvp_signed(problem, state, active_set, 0.0);
     state.b = -0.5 * sij;
     state.violation = dij;
     (idx_i, idx_j)
@@ -189,17 +235,18 @@ fn find_ws2(
     idx_i0: usize,
     idx_j1: usize,
     state: &State,
+    active_set: &Vec<usize>,
     sign: f64,
 ) -> (usize, usize) {
-    let i0 = state.active_set[idx_i0];
-    let j1 = state.active_set[idx_j1];
+    let i0 = active_set[idx_i0];
+    let j1 = active_set[idx_j1];
     let gi0 = state.g[i0];
     let gj1 = state.g[j1];
     let mut max_d0 = 0.0;
     let mut max_d1 = 0.0;
     let mut idx_j0 = idx_j1;
     let mut idx_i1 = idx_i0;
-    kernel.use_rows([i0, j1].to_vec(), &mut |kij: Vec<&[f64]>| {
+    kernel.use_rows([i0, j1].to_vec(), &active_set, &mut |kij: Vec<&[f64]>| {
         let ki0 = kij[0];
         let kj1 = kij[1];
         let ki0i0 = ki0[idx_i0];
@@ -207,7 +254,7 @@ fn find_ws2(
         let max_ti0 = state.a[i0] - problem.lb(i0);
         let max_tj1 = problem.ub(j1) - state.a[j1];
 
-        for (idx_r, &r) in state.active_set.iter().enumerate() {
+        for (idx_r, &r) in active_set.iter().enumerate() {
             if sign * problem.sign(r) < 0.0 {
                 continue;
             }
@@ -263,6 +310,7 @@ fn find_ws2(
 pub struct SMOResult {
     a: Vec<f64>,
     b: f64,
+    c: f64,
     value: f64,
     violation: f64,
     steps: usize,
@@ -273,6 +321,7 @@ impl SMOResult {
         SMOResult {
             a: state.a.to_vec(),
             b: state.b,
+            c: state.c,
             value: state.value,
             violation: state.violation,
             steps: 0,
@@ -298,10 +347,11 @@ fn update(
     idx_i: usize,
     idx_j: usize,
     state: &mut State,
+    active_set: &Vec<usize>,
 ) {
-    let i = state.active_set[idx_i];
-    let j = state.active_set[idx_j];
-    kernel.use_rows([i, j].to_vec(), &mut |kij: Vec<&[f64]>| {
+    let i = active_set[idx_i];
+    let j = active_set[idx_j];
+    kernel.use_rows([i, j].to_vec(), &active_set, &mut |kij: Vec<&[f64]>| {
         let ki = kij[0];
         let kj = kij[1];
         let pij = state.g[i] - state.g[j];
@@ -317,7 +367,7 @@ fn update(
         state.a[j] += tij;
         let tij_l = tij / problem.get_lambda();
         state.value -= tij * (0.5 * qij * tij_l - pij);
-        for (idx, &k) in state.active_set.iter().enumerate() {
+        for (idx, &k) in active_set.iter().enumerate() {
             state.ka[k] += tij_l * (kj[idx] - ki[idx]);
         }
     });
@@ -325,7 +375,7 @@ fn update(
 
 pub fn solve(
     problem: &impl Problem,
-    kernel: &impl Kernel,
+    kernel: &mut impl Kernel,
     tol: f64,
     max_steps: usize,
     verbose: usize,
@@ -337,12 +387,13 @@ pub fn solve(
     let mut state = State {
         a: vec![0.0; n],
         b: 0.0,
+        c: 0.0,
         violation: f64::INFINITY,
         value: 0.0,
         ka: vec![0.0; n],
         g: vec![0.0; n],
-        active_set: (0..n).collect(),
     };
+    let mut active_set = (0..n).collect();
 
     let mut step: usize = 0;
     loop {
@@ -352,30 +403,37 @@ pub fn solve(
         }
         // TODO: callback
         if shrinking_period > 0 && step % shrinking_period == 0 {
-            state.shrink(problem, shrinking_threshold);
+            problem.shrink(kernel, &state, &mut active_set, shrinking_threshold);
         }
 
-        let (idx_i0, idx_j1) = find_mvp(problem, &mut state);
+        let (idx_i0, idx_j1) = find_mvp(problem, &mut state, &active_set);
         let optimal = problem.is_optimal(&state, tol);
 
         if verbose > 0 && (step % verbose == 0 || optimal) {
-            println!("{:10} {:10.6} {:10.6}", step, state.violation, state.value)
+            println!(
+                "{:10} {:10.6} {:10.6} {} / {}",
+                step,
+                state.violation,
+                state.value,
+                active_set.len(),
+                problem.size()
+            )
         }
 
         if optimal {
-            if state.is_shrunk() {
-                state.unshrink(problem);
+            if problem.is_shrunk(&state, &active_set) {
+                problem.unshrink(kernel, &mut state, &mut active_set);
                 continue;
             }
             break;
         }
 
         let (idx_i, idx_j) = if second_order {
-            find_ws2(problem, kernel, idx_i0, idx_j1, &state, 0.0)
+            find_ws2(problem, kernel, idx_i0, idx_j1, &state, &active_set, 0.0)
         } else {
             (idx_i0, idx_j1)
         };
-        update(problem, kernel, idx_i, idx_j, &mut state);
+        update(problem, kernel, idx_i, idx_j, &mut state, &active_set);
         step += 1;
     }
     let mut result = SMOResult::from_state(&state);
@@ -409,10 +467,10 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             w: vec![1.0; n],
         };
         let data = x.as_array();
-        let kernel = GaussianKernel::new(1.0, data);
+        let mut kernel = GaussianKernel::new(1.0, data);
         let result = solve(
             &problem,
-            &kernel,
+            &mut kernel,
             tol,
             max_steps,
             verbose,
