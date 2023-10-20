@@ -27,7 +27,7 @@ pub trait Problem {
 }
 
 pub trait Kernel {
-    fn use_rows(&mut self, idxs: Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>));
+    fn use_rows(&self, idxs: Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>));
     fn diag(&self, i: usize) -> f64;
 }
 
@@ -52,7 +52,7 @@ impl<'a> GaussianKernel<'a> {
         }
         GaussianKernel { gamma, data, xsqr }
     }
-    fn compute_row(&mut self, i: usize, ki: &mut [f64]) {
+    fn compute_row(&self, i: usize, ki: &mut [f64]) {
         let &[n, _nft] = self.data.shape() else {
             panic!("x has bad shape");
         };
@@ -67,7 +67,7 @@ impl<'a> GaussianKernel<'a> {
 }
 
 impl Kernel for GaussianKernel<'_> {
-    fn use_rows(&mut self, idxs: Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>)) {
+    fn use_rows(&self, idxs: Vec<usize>, fun: &mut dyn FnMut(Vec<&[f64]>)) {
         let mut kidxs = Vec::with_capacity(2);
         for &idx in &idxs {
             // TODO: active set
@@ -137,7 +137,7 @@ impl Problem for Classification {
 }
 
 fn find_mvp_signed(
-    problem: &dyn Problem,
+    problem: &impl Problem,
     state: &mut State,
     sign: f64,
 ) -> (f64, f64, usize, usize) {
@@ -162,11 +162,102 @@ fn find_mvp_signed(
     (g_max - g_min, g_max + g_min, idx_i, idx_j)
 }
 
-fn find_mvp(problem: &dyn Problem, state: &mut State) -> (usize, usize) {
+fn find_mvp(problem: &impl Problem, state: &mut State) -> (usize, usize) {
     let (dij, sij, idx_i, idx_j) = find_mvp_signed(problem, state, 0.0);
     state.b = -0.5 * sij;
     state.violation = dij;
     (idx_i, idx_j)
+}
+
+fn descent(q: f64, p: f64, t_max0: f64, t_max1: f64, lmbda: f64, regularization: f64) -> f64 {
+    if p <= 0.0 || t_max1 == 0.0 {
+        0.0
+    } else {
+        let t = f64::min(
+            lmbda * p / f64::max(q, regularization),
+            f64::min(t_max0, t_max1),
+        );
+        t * (p - 0.5 / lmbda * q * t)
+    }
+}
+
+fn find_ws2(
+    problem: &impl Problem,
+    kernel: &impl Kernel,
+    idx_i0: usize,
+    idx_j1: usize,
+    state: &State,
+    sign: f64,
+) -> (usize, usize) {
+    let i0 = state.active_set[idx_i0];
+    let j1 = state.active_set[idx_j1];
+    let gi0 = state.g[i0];
+    let gj1 = state.g[j1];
+    let mut max_d0 = 0.0;
+    let mut max_d1 = 0.0;
+    let mut idx_j0 = idx_j1;
+    let mut idx_i1 = idx_i0;
+    kernel.use_rows([i0, j1].to_vec(), &mut |kij: Vec<&[f64]>| {
+        let ki0 = kij[0];
+        let kj1 = kij[1];
+        let ki0i0 = ki0[idx_i0];
+        let kj1j1 = kj1[idx_j1];
+        let max_ti0 = state.a[i0] - problem.lb(i0);
+        let max_tj1 = problem.ub(j1) - state.a[j1];
+
+        for (idx_r, &r) in state.active_set.iter().enumerate() {
+            if sign * problem.sign(r) < 0.0 {
+                continue;
+            }
+            let gr = state.g[r];
+            let krr = kernel.diag(r);
+            let pi0r = gi0 - gr;
+            let prj1 = gr - gj1;
+            let d_upr = problem.ub(r) - state.a[r];
+            let d_dnr = state.a[r] - problem.lb(r);
+
+            if d_upr > 0.0 && pi0r > 0.0 {
+                let qi0 = ki0i0 + krr - 2.0 * ki0[idx_r]
+                    + problem.quad(state, i0)
+                    + problem.quad(state, r);
+                let di0r = descent(
+                    qi0,
+                    pi0r,
+                    max_ti0,
+                    d_upr,
+                    problem.get_lambda(),
+                    problem.get_regularization(),
+                );
+                if di0r > max_d0 {
+                    idx_j0 = idx_r;
+                    max_d0 = di0r;
+                }
+            }
+
+            if d_dnr > 0.0 && prj1 > 0.0 {
+                let qj1 = kj1j1 + krr - 2.0 * kj1[idx_r]
+                    + problem.quad(state, j1)
+                    + problem.quad(state, r);
+                let drj1 = descent(
+                    qj1,
+                    prj1,
+                    max_tj1,
+                    d_dnr,
+                    problem.get_lambda(),
+                    problem.get_regularization(),
+                );
+                if drj1 > max_d1 {
+                    idx_i1 = idx_r;
+                    max_d1 = drj1;
+                }
+            }
+        }
+    });
+    if max_d0 > max_d1 {
+        (idx_i0, idx_j0)
+    } else {
+        (idx_i1, idx_j1)
+    }
 }
 
 pub struct SMOResult {
@@ -202,8 +293,8 @@ impl IntoPy<PyObject> for SMOResult {
 }
 
 fn update(
-    problem: &dyn Problem,
-    kernel: &mut impl Kernel,
+    problem: &impl Problem,
+    kernel: &impl Kernel,
     idx_i: usize,
     idx_j: usize,
     state: &mut State,
@@ -211,15 +302,16 @@ fn update(
     let i = state.active_set[idx_i];
     let j = state.active_set[idx_j];
     kernel.use_rows([i, j].to_vec(), &mut |kij: Vec<&[f64]>| {
-        let ki: &[f64] = kij[0];
+        let ki = kij[0];
         let kj = kij[1];
         let pij = state.g[i] - state.g[j];
         let qij = ki[idx_i] + kj[idx_j] - 2.0 * ki[idx_j]
             + problem.quad(state, i)
             + problem.quad(state, j);
-        let tij = f64::min(
+        let max_tij = f64::min(state.a[i] - problem.lb(i), problem.ub(j) - state.a[j]);
+        let tij: f64 = f64::min(
             problem.get_lambda() * pij / f64::max(qij, problem.get_regularization()),
-            f64::min(state.a[i] - problem.lb(i), problem.ub(j) - state.a[j]),
+            max_tij,
         );
         state.a[i] -= tij;
         state.a[j] += tij;
@@ -232,8 +324,8 @@ fn update(
 }
 
 pub fn solve(
-    problem: &dyn Problem,
-    kernel: &mut impl Kernel,
+    problem: &impl Problem,
+    kernel: &impl Kernel,
     tol: f64,
     max_steps: usize,
     verbose: usize,
@@ -271,8 +363,7 @@ pub fn solve(
         }
 
         let (idx_i, idx_j) = if second_order {
-            // TODO: 2nd order
-            (idx_i0, idx_j1)
+            find_ws2(problem, kernel, idx_i0, idx_j1, &state, 0.0)
         } else {
             (idx_i0, idx_j1)
         };
@@ -308,8 +399,8 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             w: vec![1.0; n],
         };
         let data = x.as_array();
-        let mut kernel = GaussianKernel::new(1.0, data);
-        let result = solve(&problem, &mut kernel, tol, max_steps, verbose, second_order);
+        let kernel = GaussianKernel::new(1.0, data);
+        let result = solve(&problem, &kernel, tol, max_steps, verbose, second_order);
         Ok(result)
     }
     Ok(())
