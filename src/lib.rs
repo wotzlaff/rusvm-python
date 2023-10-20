@@ -107,10 +107,10 @@ impl<'a> GaussianKernel<'a> {
         };
         let xsqri = self.xsqr[i];
         let xi = self.data.row(i);
-        for &j in active_set.iter() {
+        for (idx_j, &j) in active_set.iter().enumerate() {
             let xj = self.data.row(j);
             let dij = xsqri + self.xsqr[j] - 2.0 * xi.dot(&xj);
-            (*ki)[j] = (-self.gamma * dij).exp();
+            (*ki)[idx_j] = (-self.gamma * dij).exp();
         }
     }
 }
@@ -122,10 +122,11 @@ impl Kernel for GaussianKernel<'_> {
         active_set: &Vec<usize>,
         fun: &mut dyn FnMut(Vec<&[f64]>),
     ) {
-        let mut kidxs = Vec::with_capacity(2);
-        for &idx in &idxs {
+        let mut kidxs = Vec::with_capacity(idxs.len());
+        let active_size = active_set.len();
+        for &idx in idxs.iter() {
             // TODO: active set
-            let mut kidx = vec![0.0; self.data.shape()[0]];
+            let mut kidx = vec![0.0; active_size];
             self.compute_row(idx, &mut kidx, active_set);
             kidxs.push(kidx);
         }
