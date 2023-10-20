@@ -1,7 +1,6 @@
 use numpy::ndarray::ArrayView2;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
-use std::rc::Rc;
 pub struct State {
     a: Vec<f64>,
     b: f64,
@@ -31,12 +30,13 @@ pub trait Kernel {
 }
 
 struct GaussianKernel<'a> {
+    gamma: f64,
     data: ArrayView2<'a, f64>,
     xsqr: Vec<f64>,
 }
 
 impl<'a> GaussianKernel<'a> {
-    fn new(data: ArrayView2<'a, f64>) -> GaussianKernel<'a> {
+    fn new(gamma: f64, data: ArrayView2<'a, f64>) -> GaussianKernel<'a> {
         let &[n, nft] = data.shape() else {
             panic!("x has bad shape");
         };
@@ -48,7 +48,7 @@ impl<'a> GaussianKernel<'a> {
             }
             xsqr.push(xsqri);
         }
-        GaussianKernel { data, xsqr }
+        GaussianKernel { gamma, data, xsqr }
     }
     fn compute_row(&mut self, i: usize, ki: &mut [f64]) {
         let &[n, _nft] = self.data.shape() else {
@@ -58,7 +58,8 @@ impl<'a> GaussianKernel<'a> {
         let xi = self.data.row(i);
         for j in 0..n {
             let xj = self.data.row(j);
-            (*ki)[j] = xsqri + self.xsqr[j] - 2.0 * xi.dot(&xj);
+            let dij = xsqri + self.xsqr[j] - 2.0 * xi.dot(&xj);
+            (*ki)[j] = (-self.gamma * dij).exp();
         }
     }
 }
@@ -129,7 +130,7 @@ impl Problem for Classification {
         self.lambda
     }
     fn get_regularization(&self) -> f64 {
-        1e-16
+        1e-12
     }
 }
 
@@ -235,7 +236,7 @@ pub fn solve(
         let optimal = problem.is_optimal(&state, tol);
 
         if verbose > 0 && (step % verbose == 0 || optimal) {
-            println!("{:10} {:10.6} {:10}", step, state.violation, state.value)
+            println!("{:10} {:10.6} {:10.6}", step, state.violation, state.value)
         }
 
         if optimal {
@@ -267,8 +268,8 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             y: y.to_vec()?,
             w: vec![1.0; n],
         };
-        let mut kernel = GaussianKernel::new(x.as_array());
-        solve(&problem, &mut kernel, 1e-3, 100, 1);
+        let mut kernel = GaussianKernel::new(1.0, x.as_array());
+        solve(&problem, &mut kernel, 1e-6, 100, 1);
         Ok(())
     }
     Ok(())
