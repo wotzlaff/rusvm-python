@@ -102,9 +102,6 @@ impl<'a> GaussianKernel<'a> {
         GaussianKernel { gamma, data, xsqr }
     }
     fn compute_row(&self, i: usize, ki: &mut [f64], active_set: &Vec<usize>) {
-        let &[n, _nft] = self.data.shape() else {
-            panic!("x has bad shape");
-        };
         let xsqri = self.xsqr[i];
         let xi = self.data.row(i);
         for (idx_j, &j) in active_set.iter().enumerate() {
