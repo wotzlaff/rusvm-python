@@ -13,6 +13,15 @@ pub struct State {
     active_set: Vec<usize>,
 }
 
+impl State {
+    fn is_shrunk(&self) -> bool {
+        self.active_set.len() < self.a.len()
+    }
+
+    fn shrink(&mut self, problem: &impl Problem, shrinking_threshold: f64) {}
+    fn unshrink(&mut self, problem: &impl Problem) {}
+}
+
 pub trait Problem {
     fn quad(&self, state: &State, i: usize) -> f64;
     fn grad(&self, state: &State, i: usize) -> f64;
@@ -169,16 +178,9 @@ fn find_mvp(problem: &impl Problem, state: &mut State) -> (usize, usize) {
     (idx_i, idx_j)
 }
 
-fn descent(q: f64, p: f64, t_max0: f64, t_max1: f64, lmbda: f64, regularization: f64) -> f64 {
-    if p <= 0.0 || t_max1 == 0.0 {
-        0.0
-    } else {
-        let t = f64::min(
-            lmbda * p / f64::max(q, regularization),
-            f64::min(t_max0, t_max1),
-        );
-        t * (p - 0.5 / lmbda * q * t)
-    }
+fn descent(q: f64, p: f64, t_max: f64, lmbda: f64, regularization: f64) -> f64 {
+    let t = f64::min(lmbda * p / f64::max(q, regularization), t_max);
+    t * (p - 0.5 / lmbda * q * t)
 }
 
 fn find_ws2(
@@ -223,8 +225,7 @@ fn find_ws2(
                 let di0r = descent(
                     qi0,
                     pi0r,
-                    max_ti0,
-                    d_upr,
+                    f64::min(max_ti0, d_upr),
                     problem.get_lambda(),
                     problem.get_regularization(),
                 );
@@ -241,8 +242,7 @@ fn find_ws2(
                 let drj1 = descent(
                     qj1,
                     prj1,
-                    max_tj1,
-                    d_dnr,
+                    f64::min(max_tj1, d_dnr),
                     problem.get_lambda(),
                     problem.get_regularization(),
                 );
@@ -330,6 +330,8 @@ pub fn solve(
     max_steps: usize,
     verbose: usize,
     second_order: bool,
+    shrinking_period: usize,
+    shrinking_threshold: f64,
 ) -> SMOResult {
     let n = problem.size();
     let mut state = State {
@@ -349,7 +351,10 @@ pub fn solve(
             break;
         }
         // TODO: callback
-        // TODO: shrinking
+        if shrinking_period > 0 && step % shrinking_period == 0 {
+            state.shrink(problem, shrinking_threshold);
+        }
+
         let (idx_i0, idx_j1) = find_mvp(problem, &mut state);
         let optimal = problem.is_optimal(&state, tol);
 
@@ -358,7 +363,10 @@ pub fn solve(
         }
 
         if optimal {
-            // TOOD: check shrinking
+            if state.is_shrunk() {
+                state.unshrink(problem);
+                continue;
+            }
             break;
         }
 
@@ -378,7 +386,7 @@ pub fn solve(
 #[pymodule]
 fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true))]
+    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0))]
     fn solve_classification<'py>(
         _py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
@@ -389,6 +397,8 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         max_steps: usize,
         verbose: usize,
         second_order: bool,
+        shrinking_period: usize,
+        shrinking_threshold: f64,
     ) -> PyResult<SMOResult> {
         let n = y.len();
         let problem = Classification {
@@ -400,7 +410,16 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         };
         let data = x.as_array();
         let kernel = GaussianKernel::new(1.0, data);
-        let result = solve(&problem, &kernel, tol, max_steps, verbose, second_order);
+        let result = solve(
+            &problem,
+            &kernel,
+            tol,
+            max_steps,
+            verbose,
+            second_order,
+            shrinking_period,
+            shrinking_threshold,
+        );
         Ok(result)
     }
     Ok(())
