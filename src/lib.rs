@@ -1,6 +1,8 @@
 use numpy::ndarray::ArrayView2;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::conversion::IntoPy;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 pub struct State {
     a: Vec<f64>,
     b: f64,
@@ -167,11 +169,36 @@ fn find_mvp(problem: &dyn Problem, state: &mut State) -> (usize, usize) {
     (idx_i, idx_j)
 }
 
-pub struct Result {
+pub struct SMOResult {
     a: Vec<f64>,
     b: f64,
     value: f64,
-    steps: i32,
+    violation: f64,
+    steps: usize,
+}
+
+impl SMOResult {
+    fn from_state(state: &State) -> SMOResult {
+        SMOResult {
+            a: state.a.to_vec(),
+            b: state.b,
+            value: state.value,
+            violation: state.violation,
+            steps: 0,
+        }
+    }
+}
+
+impl IntoPy<PyObject> for SMOResult {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let res = PyDict::new(py);
+        let _ = res.set_item("a", self.a);
+        let _ = res.set_item("b", self.b);
+        let _ = res.set_item("value", self.value);
+        let _ = res.set_item("violation", self.violation);
+        let _ = res.set_item("steps", self.steps);
+        res.into_py(py)
+    }
 }
 
 fn update(
@@ -208,15 +235,10 @@ pub fn solve(
     problem: &dyn Problem,
     kernel: &mut impl Kernel,
     tol: f64,
-    max_steps: i32,
-    verbose: i32,
-) -> Result {
-    let mut result = Result {
-        a: vec![],
-        b: f64::NAN,
-        value: 0.0,
-        steps: 0,
-    };
+    max_steps: usize,
+    verbose: usize,
+    second_order: bool,
+) -> SMOResult {
     let n = problem.size();
     let mut state = State {
         a: vec![0.0; n],
@@ -228,8 +250,12 @@ pub fn solve(
         active_set: (0..n).collect(),
     };
 
-    for step in 1..=max_steps {
+    let mut step: usize = 0;
+    loop {
         // TODO: check time limit
+        if step >= max_steps {
+            break;
+        }
         // TODO: callback
         // TODO: shrinking
         let (idx_i0, idx_j1) = find_mvp(problem, &mut state);
@@ -241,36 +267,50 @@ pub fn solve(
 
         if optimal {
             // TOOD: check shrinking
-            result.steps = step;
             break;
         }
 
-        // TODO: 2nd order
-        let (idx_i, idx_j) = (idx_i0, idx_j1);
+        let (idx_i, idx_j) = if second_order {
+            // TODO: 2nd order
+            (idx_i0, idx_j1)
+        } else {
+            (idx_i0, idx_j1)
+        };
         update(problem, kernel, idx_i, idx_j, &mut state);
+        step += 1;
     }
-    return result;
+    let mut result = SMOResult::from_state(&state);
+    result.steps = step;
+    result
 }
 
 #[pymodule]
 fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
+    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true))]
     fn solve_classification<'py>(
-        py: Python<'py>,
+        _py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
-    ) -> PyResult<()> {
+        lmbda: f64,
+        smoothing: f64,
+        tol: f64,
+        max_steps: usize,
+        verbose: usize,
+        second_order: bool,
+    ) -> PyResult<SMOResult> {
         let n = y.len();
         let problem = Classification {
-            smoothing: 0.0,
-            lambda: 1e-3,
+            smoothing,
+            lambda: lmbda,
             shift: 1.0,
             y: y.to_vec()?,
             w: vec![1.0; n],
         };
-        let mut kernel = GaussianKernel::new(1.0, x.as_array());
-        solve(&problem, &mut kernel, 1e-6, 100, 1);
-        Ok(())
+        let data = x.as_array();
+        let mut kernel = GaussianKernel::new(1.0, data);
+        let result = solve(&problem, &mut kernel, tol, max_steps, verbose, second_order);
+        Ok(result)
     }
     Ok(())
 }
