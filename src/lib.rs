@@ -3,6 +3,7 @@ use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::conversion::IntoPy;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::time::Instant;
 pub struct State {
     a: Vec<f64>,
     b: f64,
@@ -311,6 +312,8 @@ pub struct SMOResult {
     value: f64,
     violation: f64,
     steps: usize,
+    time: f64,
+    status: Status,
 }
 
 impl SMOResult {
@@ -322,6 +325,8 @@ impl SMOResult {
             value: state.value,
             violation: state.violation,
             steps: 0,
+            status: Status::MaxSteps,
+            time: f64::NAN,
         }
     }
 }
@@ -335,6 +340,15 @@ impl IntoPy<PyObject> for SMOResult {
         let _ = res.set_item("value", self.value);
         let _ = res.set_item("violation", self.violation);
         let _ = res.set_item("steps", self.steps);
+        let _ = res.set_item("time", self.time);
+        let _ = res.set_item(
+            "status",
+            match self.status {
+                Status::MaxSteps => "max_steps",
+                Status::Optimal => "optimal",
+                Status::TimeLimit => "time_limit",
+            },
+        );
         res.into_py(py)
     }
 }
@@ -371,6 +385,12 @@ fn update(
     });
 }
 
+enum Status {
+    Optimal,
+    MaxSteps,
+    TimeLimit,
+}
+
 pub fn solve(
     problem: &impl Problem,
     kernel: &mut impl Kernel,
@@ -380,7 +400,9 @@ pub fn solve(
     second_order: bool,
     shrinking_period: usize,
     shrinking_threshold: f64,
+    time_limit: f64,
 ) -> SMOResult {
+    let start = Instant::now();
     let n = problem.size();
     let mut state = State {
         a: vec![0.0; n],
@@ -393,11 +415,17 @@ pub fn solve(
     };
     let mut active_set = (0..n).collect();
 
+    let mut status = Status::MaxSteps;
     let mut step: usize = 0;
+    let mut stop = false;
     loop {
-        // TODO: check time limit
         if step >= max_steps {
-            break;
+            stop = true;
+        }
+        let elapsed = start.elapsed().as_secs_f64();
+        if time_limit > 0.0 && elapsed >= time_limit {
+            status = Status::TimeLimit;
+            stop = true;
         }
         // TODO: callback
         if shrinking_period > 0 && step % shrinking_period == 0 {
@@ -409,8 +437,9 @@ pub fn solve(
 
         if verbose > 0 && (step % verbose == 0 || optimal) {
             println!(
-                "{:10} {:10.6} {:10.6} {} / {}",
+                "{:10} {:10.2} {:10.6} {:10.6} {} / {}",
                 step,
+                elapsed,
                 state.violation,
                 state.value,
                 active_set.len(),
@@ -423,6 +452,11 @@ pub fn solve(
                 problem.unshrink(kernel, &mut state, &mut active_set);
                 continue;
             }
+            status = Status::Optimal;
+            stop = true;
+        }
+
+        if stop {
             break;
         }
 
@@ -436,13 +470,15 @@ pub fn solve(
     }
     let mut result = SMOResult::from_state(&state);
     result.steps = step;
+    result.status = status;
+    result.time = start.elapsed().as_secs_f64();
     result
 }
 
 #[pymodule]
 fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0))]
+    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0, time_limit = 0.0))]
     fn solve_classification<'py>(
         _py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
@@ -455,6 +491,7 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         second_order: bool,
         shrinking_period: usize,
         shrinking_threshold: f64,
+        time_limit: f64,
     ) -> PyResult<SMOResult> {
         let n = y.len();
         let problem = Classification {
@@ -475,6 +512,7 @@ fn smorust<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             second_order,
             shrinking_period,
             shrinking_threshold,
+            time_limit,
         );
         Ok(result)
     }
