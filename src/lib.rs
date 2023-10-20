@@ -122,7 +122,6 @@ impl Kernel for GaussianKernel<'_> {
         let mut kidxs = Vec::with_capacity(idxs.len());
         let active_size = active_set.len();
         for &idx in idxs.iter() {
-            // TODO: active set
             let mut kidx = vec![0.0; active_size];
             self.compute_row(idx, &mut kidx, active_set);
             kidxs.push(kidx);
@@ -258,11 +257,9 @@ fn find_ws2(
             }
             let gr = state.g[r];
             let krr = kernel.diag(r);
-            let pi0r = gi0 - gr;
-            let prj1 = gr - gj1;
-            let d_upr = problem.ub(r) - state.a[r];
-            let d_dnr = state.a[r] - problem.lb(r);
 
+            let pi0r = gi0 - gr;
+            let d_upr = problem.ub(r) - state.a[r];
             if d_upr > 0.0 && pi0r > 0.0 {
                 let qi0 = ki0i0 + krr - 2.0 * ki0[idx_r]
                     + problem.quad(state, i0)
@@ -280,6 +277,8 @@ fn find_ws2(
                 }
             }
 
+            let prj1 = gr - gj1;
+            let d_dnr = state.a[r] - problem.lb(r);
             if d_dnr > 0.0 && prj1 > 0.0 {
                 let qj1 = kj1j1 + krr - 2.0 * kj1[idx_r]
                     + problem.quad(state, j1)
