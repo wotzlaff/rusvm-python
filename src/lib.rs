@@ -335,6 +335,7 @@ impl IntoPy<PyObject> for SMOResult {
         let res = PyDict::new(py);
         let _ = res.set_item("a", self.a);
         let _ = res.set_item("b", self.b);
+        let _ = res.set_item("c", self.c);
         let _ = res.set_item("value", self.value);
         let _ = res.set_item("violation", self.violation);
         let _ = res.set_item("steps", self.steps);
