@@ -27,7 +27,7 @@ fn status_to_dict(status: smorust::Status, py: Python<'_>) -> PyObject {
 #[pymodule]
 fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0, time_limit = 0.0))]
+    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0, time_limit = 0.0, cache_size = 0))]
     fn solve_classification<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
@@ -41,14 +41,23 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         shrinking_period: usize,
         shrinking_threshold: f64,
         time_limit: f64,
+        cache_size: usize,
     ) -> PyResult<PyObject> {
         let problem =
             smorust::problem::Classification::new(y.as_slice()?, lmbda).with_smoothing(smoothing);
         let data = x.as_array();
-        let mut kernel = smorust::kernel::GaussianKernel::new(1.0, data);
+        let (mut base, mut cached);
+        base = smorust::kernel::GaussianKernel::new(1.0, data);
+        let kernel: &mut dyn smorust::kernel::Kernel = if cache_size > 0 {
+            cached = smorust::kernel::CachedKernel::from(&mut base, cache_size);
+            &mut cached
+        } else {
+            &mut base
+        };
+
         let result = smorust::solve(
             &problem,
-            &mut kernel,
+            kernel,
             tol,
             max_steps,
             verbose,
