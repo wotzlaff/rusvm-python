@@ -43,7 +43,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         shrinking_threshold: f64,
         time_limit: f64,
     ) -> PyResult<PyObject> {
-        let problem = Classification::new(y.to_vec()?, lmbda).set_smoothing(smoothing);
+        let problem = Classification::new(y.as_slice()?, lmbda).set_smoothing(smoothing);
         let data = x.as_array();
         let mut kernel = GaussianKernel::new(1.0, data);
         let result = solve(
