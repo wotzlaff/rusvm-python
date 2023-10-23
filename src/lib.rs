@@ -3,23 +3,22 @@ use pyo3::conversion::IntoPy;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use smorust::{solve, Classification, GaussianKernel, SMOResult, Status};
-
-fn result_to_dict(res: SMOResult, py: Python<'_>) -> PyObject {
+fn status_to_dict(status: smorust::Status, py: Python<'_>) -> PyObject {
     let dict = PyDict::new(py);
-    let _ = dict.set_item("a", res.a);
-    let _ = dict.set_item("b", res.b);
-    let _ = dict.set_item("c", res.c);
-    let _ = dict.set_item("value", res.value);
-    let _ = dict.set_item("violation", res.violation);
-    let _ = dict.set_item("steps", res.steps);
-    let _ = dict.set_item("time", res.time);
+    let _ = dict.set_item("a", status.a);
+    let _ = dict.set_item("b", status.b);
+    let _ = dict.set_item("c", status.c);
+    let _ = dict.set_item("value", status.value);
+    let _ = dict.set_item("violation", status.violation);
+    let _ = dict.set_item("steps", status.steps);
+    let _ = dict.set_item("time", status.time);
     let _ = dict.set_item(
         "status",
-        match res.status {
-            Status::MaxSteps => "max_steps",
-            Status::Optimal => "optimal",
-            Status::TimeLimit => "time_limit",
+        match status.code {
+            smorust::StatusCode::Initialized => "initialized",
+            smorust::StatusCode::MaxSteps => "max_steps",
+            smorust::StatusCode::Optimal => "optimal",
+            smorust::StatusCode::TimeLimit => "time_limit",
         },
     );
     dict.into_py(py)
@@ -43,10 +42,11 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         shrinking_threshold: f64,
         time_limit: f64,
     ) -> PyResult<PyObject> {
-        let problem = Classification::new(y.as_slice()?, lmbda).set_smoothing(smoothing);
+        let problem =
+            smorust::problem::Classification::new(y.as_slice()?, lmbda).with_smoothing(smoothing);
         let data = x.as_array();
-        let mut kernel = GaussianKernel::new(1.0, data);
-        let result = solve(
+        let mut kernel = smorust::kernel::GaussianKernel::new(1.0, data);
+        let result = smorust::solve(
             &problem,
             &mut kernel,
             tol,
@@ -57,7 +57,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             shrinking_threshold,
             time_limit,
         );
-        let py_result = result_to_dict(result, py);
+        let py_result = status_to_dict(result, py);
         Ok(py_result)
     }
     Ok(())
