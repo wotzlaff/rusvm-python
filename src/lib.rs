@@ -27,7 +27,7 @@ fn status_to_dict(status: smorust::Status, py: Python<'_>) -> PyObject {
 #[pymodule]
 fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0, time_limit = 0.0, cache_size = 0))]
+    #[pyo3(signature = (x, y, lmbda = 1e-3, smoothing = 0.0, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, log_objective = false, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0, time_limit = 0.0, cache_size = 0))]
     fn solve_classification<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
@@ -37,6 +37,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         tol: f64,
         max_steps: usize,
         verbose: usize,
+        log_objective: bool,
         second_order: bool,
         shrinking_period: usize,
         shrinking_threshold: f64,
@@ -61,6 +62,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             tol,
             max_steps,
             verbose,
+            log_objective,
             second_order,
             shrinking_period,
             shrinking_threshold,
