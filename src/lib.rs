@@ -62,76 +62,97 @@ fn extract<'a, T: pyo3::FromPyObject<'a>>(
     }
 }
 
-fn extract_params(params: Option<&PyDict>) -> PyResult<smorust::problem::Params> {
-    let mut params_problem = smorust::problem::Params::new();
-    if let Some(lambda) = extract::<f64>(params, "lmbda")? {
-        params_problem.lambda = lambda;
+fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<smorust::problem::Params> {
+    let mut params = smorust::problem::Params::new();
+    if let Some(lambda) = extract::<f64>(params_dict, "lmbda")? {
+        params.lambda = lambda;
     }
-    if let Some(smoothing) = extract::<f64>(params, "smoothing")? {
-        params_problem.smoothing = smoothing;
+    if let Some(smoothing) = extract::<f64>(params_dict, "smoothing")? {
+        params.smoothing = smoothing;
     }
-    if let Some(max_asum) = extract::<f64>(params, "max_asum")? {
-        params_problem.max_asum = max_asum;
+    if let Some(max_asum) = extract::<f64>(params_dict, "max_asum")? {
+        params.max_asum = max_asum;
     }
-    if let Some(regularization) = extract::<f64>(params, "regularization")? {
-        params_problem.regularization = regularization;
+    if let Some(regularization) = extract::<f64>(params_dict, "regularization")? {
+        params.regularization = regularization;
     }
-    Ok(params_problem)
+    Ok(params)
+}
+
+fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<smorust::smo::Params> {
+    let mut params = smorust::smo::Params::new();
+    params.tol = extract::<f64>(params_dict, "tol")?.unwrap_or(params.tol);
+    params.max_steps = extract::<usize>(params_dict, "max_steps")?.unwrap_or(params.max_steps);
+    params.verbose = extract::<usize>(params_dict, "verbose")?.unwrap_or(params.verbose);
+    params.log_objective =
+        extract::<bool>(params_dict, "log_objective")?.unwrap_or(params.log_objective);
+    params.second_order =
+        extract::<bool>(params_dict, "second_order")?.unwrap_or(params.second_order);
+    params.shrinking_period =
+        extract::<usize>(params_dict, "shrinking_period")?.unwrap_or(params.shrinking_period);
+    params.shrinking_threshold =
+        extract::<f64>(params_dict, "shrinking_threshold")?.unwrap_or(params.shrinking_threshold);
+    params.time_limit = extract::<f64>(params_dict, "time_limit")?.unwrap_or(params.time_limit);
+    Ok(params)
 }
 
 #[pymodule]
 fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, kind = "classification", params = None, tol = 1e-4, max_steps = 1_000_000_000, verbose = 0, log_objective = false, second_order = true, shrinking_period = 0, shrinking_threshold = 1.0, time_limit = 0.0, cache_size = 0, callback = None))]
+    #[pyo3(signature = (x, y, kind = "classification", params_problem = None, params_smo = None, cache_size = 0, callback = None))]
     fn solve_classification<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
         kind: &str,
-        params: Option<&PyDict>,
-        tol: f64,
-        max_steps: usize,
-        verbose: usize,
-        log_objective: bool,
-        second_order: bool,
-        shrinking_period: usize,
-        shrinking_threshold: f64,
-        time_limit: f64,
+        params_problem: Option<&PyDict>,
+        params_smo: Option<&PyDict>,
         cache_size: usize,
         callback: Option<&PyAny>,
     ) -> PyResult<PyObject> {
+        check_params(
+            params_smo,
+            vec![
+                "tol",
+                "max_steps",
+                "verbose",
+                "log_objective",
+                "second_order",
+                "shrinking_period",
+                "shrinking_threshold",
+                "time_limit",
+            ]
+            .as_slice(),
+        )?;
+        let params_smo = extract_params_smo(params_smo)?;
+
         let problem: Box<dyn smorust::problem::Problem> = match kind {
             "classification" => {
                 check_params(
-                    params,
+                    params_problem,
                     vec!["lmbda", "smoothing", "max_asum", "shift"].as_slice(),
                 )?;
-                let mut problem =
-                    smorust::problem::Classification::new(y.as_slice()?, extract_params(params)?);
-
-                if let Some(p) = params {
-                    let shift = p.get_item("shift")?;
-                    if !shift.is_none() {
-                        let shift_value = shift.unwrap().extract::<f64>()?;
-                        problem.shift = shift_value;
-                    }
+                let mut problem = smorust::problem::Classification::new(
+                    y.as_slice()?,
+                    extract_params_problem(params_problem)?,
+                );
+                if let Some(shift) = extract::<f64>(params_problem, "shift")? {
+                    problem.shift = shift;
                 }
                 Box::new(problem)
             }
             "regression" => {
                 check_params(
-                    params,
+                    params_problem,
                     vec!["lmbda", "smoothing", "max_asum", "epsilon"].as_slice(),
                 )?;
-                let mut problem =
-                    smorust::problem::Regression::new(y.as_slice()?, extract_params(params)?);
+                let mut problem = smorust::problem::Regression::new(
+                    y.as_slice()?,
+                    extract_params_problem(params_problem)?,
+                );
 
-                if let Some(p) = params {
-                    let epsilon = p.get_item("epsilon")?;
-                    if !epsilon.is_none() {
-                        let epsilon_value = epsilon.unwrap().extract::<f64>()?;
-                        problem.epsilon = epsilon_value;
-                    }
+                if let Some(epsilon) = extract::<f64>(params_problem, "epsilon")? {
+                    problem.epsilon = epsilon;
                 }
                 Box::new(problem)
             }
@@ -159,14 +180,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let result = smorust::solve(
             problem.as_ref(),
             kernel.as_mut(),
-            tol,
-            max_steps,
-            verbose,
-            log_objective,
-            second_order,
-            shrinking_period,
-            shrinking_threshold,
-            time_limit,
+            &params_smo,
             match callback {
                 None => {
                     fun = Box::new(|_| match py.check_signals() {
