@@ -44,28 +44,38 @@ fn check_params(params: Option<&PyDict>, possible_keys: &[&str]) -> PyResult<()>
     Ok(())
 }
 
-fn extract_params(params: Option<&PyDict>) -> PyResult<smorust::problem::Params> {
-    let mut params_problem = smorust::problem::Params::new();
+fn extract<'a, T: pyo3::FromPyObject<'a>>(
+    params: Option<&'a PyDict>,
+    key: &str,
+) -> PyResult<Option<T>> {
     match params {
         Some(p) => {
-            let lmbda = p.get_item("lmbda")?;
-            if !lmbda.is_none() {
-                let lmbda_value = lmbda.unwrap().extract::<f64>()?;
-                params_problem.lambda = lmbda_value;
-            }
-            let smoothing = p.get_item("smoothing")?;
-            if !smoothing.is_none() {
-                let smoothing_value = smoothing.unwrap().extract::<f64>()?;
-                params_problem.smoothing = smoothing_value;
-            }
-            let max_asum = p.get_item("max_asum")?;
-            if !max_asum.is_none() {
-                let max_asum_value = max_asum.unwrap().extract::<f64>()?;
-                params_problem.max_asum = max_asum_value;
+            let lmbda = p.get_item(key)?;
+            if lmbda.is_none() {
+                Ok(None)
+            } else {
+                let val = lmbda.unwrap().extract::<T>()?;
+                Ok(Some(val))
             }
         }
-        None => {}
-    };
+        None => Ok(None),
+    }
+}
+
+fn extract_params(params: Option<&PyDict>) -> PyResult<smorust::problem::Params> {
+    let mut params_problem = smorust::problem::Params::new();
+    if let Some(lambda) = extract::<f64>(params, "lmbda")? {
+        params_problem.lambda = lambda;
+    }
+    if let Some(smoothing) = extract::<f64>(params, "smoothing")? {
+        params_problem.smoothing = smoothing;
+    }
+    if let Some(max_asum) = extract::<f64>(params, "max_asum")? {
+        params_problem.max_asum = max_asum;
+    }
+    if let Some(regularization) = extract::<f64>(params, "regularization")? {
+        params_problem.regularization = regularization;
+    }
     Ok(params_problem)
 }
 
