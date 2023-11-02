@@ -9,6 +9,7 @@ fn status_to_dict(status: &smorust::Status, py: Python<'_>) -> PyObject {
     let _ = dict.set_item("a", &status.a);
     let _ = dict.set_item("b", status.b);
     let _ = dict.set_item("c", status.c);
+    let _ = dict.set_item("ka", &status.ka);
     let _ = dict.set_item("value", status.value);
     let _ = dict.set_item("violation", status.violation);
     let _ = dict.set_item("steps", status.steps);
