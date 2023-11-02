@@ -80,6 +80,21 @@ fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<smorust::pro
 }
 
 fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<smorust::smo::Params> {
+    check_params(
+        params_dict,
+        vec![
+            "tol",
+            "max_steps",
+            "verbose",
+            "log_objective",
+            "second_order",
+            "shrinking_period",
+            "shrinking_threshold",
+            "time_limit",
+        ]
+        .as_slice(),
+    )?;
+
     let mut params = smorust::smo::Params::new();
     params.tol = extract::<f64>(params_dict, "tol")?.unwrap_or(params.tol);
     params.max_steps = extract::<usize>(params_dict, "max_steps")?.unwrap_or(params.max_steps);
@@ -96,6 +111,79 @@ fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<smorust::smo::Pa
     Ok(params)
 }
 
+fn prepare_problem<'a>(
+    kind: &str,
+    y: &'a &[f64],
+    params: Option<&PyDict>,
+) -> PyResult<Box<dyn smorust::problem::Problem + 'a>> {
+    match kind {
+        "classification" => {
+            check_params(
+                params,
+                vec!["lmbda", "smoothing", "max_asum", "shift"].as_slice(),
+            )?;
+            let mut problem =
+                smorust::problem::Classification::new(y, extract_params_problem(params)?);
+            if let Some(shift) = extract::<f64>(params, "shift")? {
+                problem.shift = shift;
+            }
+            Ok(Box::new(problem))
+        }
+        "regression" => {
+            check_params(
+                params,
+                vec!["lmbda", "smoothing", "max_asum", "epsilon"].as_slice(),
+            )?;
+            let mut problem = smorust::problem::Regression::new(y, extract_params_problem(params)?);
+
+            if let Some(epsilon) = extract::<f64>(params, "epsilon")? {
+                problem.epsilon = epsilon;
+            }
+            Ok(Box::new(problem))
+        }
+        &_ => {
+            return Err(PyValueError::new_err(format!(
+                "unkown problem kind '{kind}'"
+            )));
+        }
+    }
+}
+
+fn prepare_callback<'py>(
+    py: Python<'py>,
+    callback: Option<&'py PyAny>,
+) -> PyResult<Option<Box<dyn Fn(&smorust::Status) -> bool + 'py>>> {
+    let fun: Box<dyn Fn(&smorust::Status) -> bool>;
+    match callback {
+        None => {
+            fun = Box::new(move |_| match py.check_signals() {
+                Err(_) => true,
+                Ok(()) => false,
+            });
+            Ok(Some(fun))
+        }
+        Some(cb) => {
+            if !cb.is_callable() {
+                return Err(PyValueError::new_err("callback is not callable"));
+            } else {
+                fun = Box::new(move |status: &smorust::Status| {
+                    if let Err(_) = py.check_signals() {
+                        return true;
+                    }
+                    let status_dict: PyObject = status_to_dict(status, py);
+                    let ret = cb.call((status_dict,), None).unwrap();
+                    let val = ret.extract::<bool>();
+                    match val {
+                        Ok(b) => b,
+                        Err(_) => false,
+                    }
+                });
+                Ok(Some(fun))
+            }
+        }
+    }
+}
+
 #[pymodule]
 fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
@@ -110,60 +198,15 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         cache_size: usize,
         callback: Option<&PyAny>,
     ) -> PyResult<PyObject> {
-        check_params(
-            params_smo,
-            vec![
-                "tol",
-                "max_steps",
-                "verbose",
-                "log_objective",
-                "second_order",
-                "shrinking_period",
-                "shrinking_threshold",
-                "time_limit",
-            ]
-            .as_slice(),
-        )?;
+        // get SMO parameter
         let params_smo = extract_params_smo(params_smo)?;
 
-        let problem: Box<dyn smorust::problem::Problem> = match kind {
-            "classification" => {
-                check_params(
-                    params_problem,
-                    vec!["lmbda", "smoothing", "max_asum", "shift"].as_slice(),
-                )?;
-                let mut problem = smorust::problem::Classification::new(
-                    y.as_slice()?,
-                    extract_params_problem(params_problem)?,
-                );
-                if let Some(shift) = extract::<f64>(params_problem, "shift")? {
-                    problem.shift = shift;
-                }
-                Box::new(problem)
-            }
-            "regression" => {
-                check_params(
-                    params_problem,
-                    vec!["lmbda", "smoothing", "max_asum", "epsilon"].as_slice(),
-                )?;
-                let mut problem = smorust::problem::Regression::new(
-                    y.as_slice()?,
-                    extract_params_problem(params_problem)?,
-                );
+        // prepare problem
+        let y = y.as_slice()?;
+        let problem = prepare_problem(kind, &y, params_problem)?;
 
-                if let Some(epsilon) = extract::<f64>(params_problem, "epsilon")? {
-                    problem.epsilon = epsilon;
-                }
-                Box::new(problem)
-            }
-            &_ => {
-                return Err(PyValueError::new_err(format!(
-                    "unkown problem kind '{kind}'"
-                )));
-            }
-        };
-        let data = x.as_array();
-        let mut base = Box::new(smorust::kernel::GaussianKernel::new(1.0, data));
+        // prepare kernel
+        let mut base = Box::new(smorust::kernel::GaussianKernel::new(1.0, x.as_array()));
         let mut kernel: Box<dyn smorust::kernel::Kernel> = {
             if cache_size > 0 {
                 Box::new(smorust::kernel::CachedKernel::from(
@@ -175,41 +218,18 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             }
         };
 
-        let fun: Box<dyn Fn(&smorust::Status) -> bool>;
+        // prepare callback
+        let callback = prepare_callback(py, callback)?;
 
+        // solve problem
         let result = smorust::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params_smo,
-            match callback {
-                None => {
-                    fun = Box::new(|_| match py.check_signals() {
-                        Err(_) => true,
-                        Ok(()) => false,
-                    });
-                    Some(fun.as_ref())
-                }
-                Some(cb) => {
-                    if !cb.is_callable() {
-                        return Err(PyValueError::new_err("callback is not callable"));
-                    } else {
-                        fun = Box::new(|status: &smorust::Status| {
-                            if let Err(_) = py.check_signals() {
-                                return true;
-                            }
-                            let status_dict: PyObject = status_to_dict(status, py);
-                            let ret = cb.call((status_dict,), None).unwrap();
-                            let val = ret.extract::<bool>();
-                            match val {
-                                Ok(b) => b,
-                                Err(_) => false,
-                            }
-                        });
-                        Some(fun.as_ref())
-                    }
-                }
-            },
+            callback.as_deref(),
         );
+
+        // return results
         let py_result = status_to_dict(&result, py);
         Ok(py_result)
     }
