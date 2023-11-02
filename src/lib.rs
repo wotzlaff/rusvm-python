@@ -222,7 +222,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let callback = prepare_callback(py, callback)?;
 
         // solve problem
-        let result = smorust::solve(
+        let result = smorust::smo::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params_smo,
