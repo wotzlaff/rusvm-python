@@ -100,7 +100,7 @@ fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<smorust::smo::Pa
 fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(signature = (x, y, kind = "classification", params_problem = None, params_smo = None, cache_size = 0, callback = None))]
-    fn solve_classification<'py>(
+    fn solve<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
