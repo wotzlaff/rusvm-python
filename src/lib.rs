@@ -4,7 +4,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-fn status_to_dict(status: &smorust::Status, py: Python<'_>) -> PyObject {
+fn status_to_dict(status: &rusvm::Status, py: Python<'_>) -> PyObject {
     let dict = PyDict::new(py);
     let _ = dict.set_item("a", &status.a);
     let _ = dict.set_item("b", status.b);
@@ -17,11 +17,11 @@ fn status_to_dict(status: &smorust::Status, py: Python<'_>) -> PyObject {
     let _ = dict.set_item(
         "status",
         match status.code {
-            smorust::StatusCode::Initialized => "initialized",
-            smorust::StatusCode::MaxSteps => "max_steps",
-            smorust::StatusCode::Optimal => "optimal",
-            smorust::StatusCode::TimeLimit => "time_limit",
-            smorust::StatusCode::Callback => "callback",
+            rusvm::StatusCode::Initialized => "initialized",
+            rusvm::StatusCode::MaxSteps => "max_steps",
+            rusvm::StatusCode::Optimal => "optimal",
+            rusvm::StatusCode::TimeLimit => "time_limit",
+            rusvm::StatusCode::Callback => "callback",
         },
     );
     dict.into_py(py)
@@ -62,8 +62,8 @@ fn extract<'a, T: pyo3::FromPyObject<'a>>(
     }
 }
 
-fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<smorust::problem::Params> {
-    let mut params = smorust::problem::Params::new();
+fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<rusvm::problem::Params> {
+    let mut params = rusvm::problem::Params::new();
     if let Some(lambda) = extract::<f64>(params_dict, "lmbda")? {
         params.lambda = lambda;
     }
@@ -79,7 +79,7 @@ fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<smorust::pro
     Ok(params)
 }
 
-fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<smorust::smo::Params> {
+fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<rusvm::smo::Params> {
     check_params(
         params_dict,
         vec![
@@ -95,7 +95,7 @@ fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<smorust::smo::Pa
         .as_slice(),
     )?;
 
-    let mut params = smorust::smo::Params::new();
+    let mut params = rusvm::smo::Params::new();
     params.tol = extract::<f64>(params_dict, "tol")?.unwrap_or(params.tol);
     params.max_steps = extract::<usize>(params_dict, "max_steps")?.unwrap_or(params.max_steps);
     params.verbose = extract::<usize>(params_dict, "verbose")?.unwrap_or(params.verbose);
@@ -115,7 +115,7 @@ fn prepare_problem<'a>(
     kind: &str,
     y: &'a &[f64],
     params: Option<&PyDict>,
-) -> PyResult<Box<dyn smorust::problem::Problem + 'a>> {
+) -> PyResult<Box<dyn rusvm::problem::Problem + 'a>> {
     match kind {
         "classification" => {
             check_params(
@@ -123,7 +123,7 @@ fn prepare_problem<'a>(
                 vec!["lmbda", "smoothing", "max_asum", "shift"].as_slice(),
             )?;
             let mut problem =
-                smorust::problem::Classification::new(y, extract_params_problem(params)?);
+                rusvm::problem::Classification::new(y, extract_params_problem(params)?);
             if let Some(shift) = extract::<f64>(params, "shift")? {
                 problem.shift = shift;
             }
@@ -134,7 +134,7 @@ fn prepare_problem<'a>(
                 params,
                 vec!["lmbda", "smoothing", "max_asum", "epsilon"].as_slice(),
             )?;
-            let mut problem = smorust::problem::Regression::new(y, extract_params_problem(params)?);
+            let mut problem = rusvm::problem::Regression::new(y, extract_params_problem(params)?);
 
             if let Some(epsilon) = extract::<f64>(params, "epsilon")? {
                 problem.epsilon = epsilon;
@@ -152,8 +152,8 @@ fn prepare_problem<'a>(
 fn prepare_callback<'py>(
     py: Python<'py>,
     callback: Option<&'py PyAny>,
-) -> PyResult<Option<Box<dyn Fn(&smorust::Status) -> bool + 'py>>> {
-    let fun: Box<dyn Fn(&smorust::Status) -> bool>;
+) -> PyResult<Option<Box<dyn Fn(&rusvm::Status) -> bool + 'py>>> {
+    let fun: Box<dyn Fn(&rusvm::Status) -> bool>;
     match callback {
         None => {
             fun = Box::new(move |_| match py.check_signals() {
@@ -166,7 +166,7 @@ fn prepare_callback<'py>(
             if !cb.is_callable() {
                 return Err(PyValueError::new_err("callback is not callable"));
             } else {
-                fun = Box::new(move |status: &smorust::Status| {
+                fun = Box::new(move |status: &rusvm::Status| {
                     if let Err(_) = py.check_signals() {
                         return true;
                     }
@@ -185,7 +185,7 @@ fn prepare_callback<'py>(
 }
 
 #[pymodule]
-fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
+fn pyrusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(signature = (x, y, kind = "classification", params_problem = None, params_smo = None, cache_size = 0, callback = None))]
     fn solve<'py>(
@@ -206,13 +206,10 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let problem = prepare_problem(kind, &y, params_problem)?;
 
         // prepare kernel
-        let mut base = Box::new(smorust::kernel::GaussianKernel::new(1.0, x.as_array()));
-        let mut kernel: Box<dyn smorust::kernel::Kernel> = {
+        let mut base = Box::new(rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let mut kernel: Box<dyn rusvm::kernel::Kernel> = {
             if cache_size > 0 {
-                Box::new(smorust::kernel::CachedKernel::from(
-                    base.as_mut(),
-                    cache_size,
-                ))
+                Box::new(rusvm::kernel::CachedKernel::from(base.as_mut(), cache_size))
             } else {
                 base
             }
@@ -222,7 +219,7 @@ fn smorupy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let callback = prepare_callback(py, callback)?;
 
         // solve problem
-        let result = smorust::smo::solve(
+        let result = rusvm::smo::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params_smo,
