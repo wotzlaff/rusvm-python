@@ -791,15 +791,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pyrusvm"
-version = "0.1.0"
-dependencies = [
- "numpy",
- "pyo3",
- "rusvm",
-]
-
-[[package]]
 name = "quote"
 version = "1.0.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -951,6 +942,15 @@ dependencies = [
  "caches",
  "ndarray",
  "ndarray-linalg",
+]
+
+[[package]]
+name = "rusvm-python"
+version = "0.1.0"
+dependencies = [
+ "numpy",
+ "pyo3",
+ "rusvm",
 ]
 
 [[package]]
