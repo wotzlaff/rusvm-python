@@ -6,7 +6,7 @@ mod prepare;
 use prepare::*;
 
 #[pymodule]
-fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
+fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(signature = (x, y, kind = "classification", params_problem = None, params_smo = None, cache_size = 0, callback = None))]
     fn solve<'py>(
@@ -25,10 +25,13 @@ fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let y = y.as_slice()?;
         let problem = prepare_problem(kind, &y, params_problem)?;
         // prepare kernel
-        let mut base = Box::new(rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
-        let mut kernel: Box<dyn rusvm::kernel::Kernel> = {
+        let mut base = Box::new(::rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
             if cache_size > 0 {
-                Box::new(rusvm::kernel::CachedKernel::from(base.as_mut(), cache_size))
+                Box::new(::rusvm::kernel::CachedKernel::from(
+                    base.as_mut(),
+                    cache_size,
+                ))
             } else {
                 base
             }
@@ -36,7 +39,7 @@ fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         // prepare callback
         let callback = prepare_callback(py, callback)?;
         // solve problem
-        let result = rusvm::smo::solve(
+        let result = ::rusvm::smo::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params_smo,
@@ -65,10 +68,13 @@ fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let y = y.as_slice()?;
         let problem = prepare_problem(kind, &y, params_problem)?;
         // prepare kernel
-        let mut base = Box::new(rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
-        let mut kernel: Box<dyn rusvm::kernel::Kernel> = {
+        let mut base = Box::new(::rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
             if cache_size > 0 {
-                Box::new(rusvm::kernel::CachedKernel::from(base.as_mut(), cache_size))
+                Box::new(::rusvm::kernel::CachedKernel::from(
+                    base.as_mut(),
+                    cache_size,
+                ))
             } else {
                 base
             }
@@ -76,7 +82,7 @@ fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         // prepare callback
         let callback = prepare_callback(py, callback)?;
         // solve problem
-        let result = rusvm::newton::solve(
+        let result = ::rusvm::newton::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params_newton,
@@ -108,10 +114,13 @@ fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let y = y.as_slice()?;
         let problem = prepare_problem(kind, &y, params_problem)?;
         // prepare kernel
-        let mut base = Box::new(rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
-        let mut kernel: Box<dyn rusvm::kernel::Kernel> = {
+        let mut base = Box::new(::rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
             if cache_size > 0 {
-                Box::new(rusvm::kernel::CachedKernel::from(base.as_mut(), cache_size))
+                Box::new(::rusvm::kernel::CachedKernel::from(
+                    base.as_mut(),
+                    cache_size,
+                ))
             } else {
                 base
             }
@@ -120,11 +129,11 @@ fn rusvmpy<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let callback_smo = prepare_callback(py, callback_smo)?;
         let callback_newton = prepare_callback(py, callback_newton)?;
         // solve problem
-        let params = rusvm::smonewt::Params {
+        let params = ::rusvm::smonewt::Params {
             smo: params_smo,
             newton: params_newton,
         };
-        let result = rusvm::smonewt::solve(
+        let result = ::rusvm::smonewt::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params,

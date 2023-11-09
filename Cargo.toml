@@ -1,15 +1,15 @@
 [package]
-name = "rusvmpy"
+name = "rusvm-python"
 version = "0.1.0"
 authors = ["Nico Strasdat <nstrasdat@gmail.com>"]
 edition = "2021"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/wotzlaff/rusvmpy"
+repository = "https://github.com/wotzlaff/rusvm-python"
 keywords = ["smo", "svm", "machine-learning"]
 
 [lib]
-name = "rusvmpy"
+name = "rusvm"
 crate-type = ["cdylib"]
 
 [dependencies]
