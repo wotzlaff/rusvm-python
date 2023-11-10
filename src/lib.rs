@@ -25,7 +25,8 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let y = y.as_slice()?;
         let problem = prepare_problem(kind, &y, params_problem)?;
         // prepare kernel
-        let mut base = Box::new(::rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let data = x.as_array();
+        let mut base = Box::new(::rusvm::kernel::gaussian(&data, 1.0));
         let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
             if cache_size > 0 {
                 Box::new(::rusvm::kernel::CachedKernel::from(
@@ -68,7 +69,8 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let y = y.as_slice()?;
         let problem = prepare_problem(kind, &y, params_problem)?;
         // prepare kernel
-        let mut base = Box::new(::rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let data = x.as_array();
+        let mut base = Box::new(::rusvm::kernel::gaussian(&data, 1.0));
         let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
             if cache_size > 0 {
                 Box::new(::rusvm::kernel::CachedKernel::from(
@@ -114,7 +116,8 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let y = y.as_slice()?;
         let problem = prepare_problem(kind, &y, params_problem)?;
         // prepare kernel
-        let mut base = Box::new(::rusvm::kernel::GaussianKernel::new(1.0, x.as_array()));
+        let data = x.as_array();
+        let mut base = Box::new(::rusvm::kernel::gaussian(&data, 1.0));
         let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
             if cache_size > 0 {
                 Box::new(::rusvm::kernel::CachedKernel::from(
