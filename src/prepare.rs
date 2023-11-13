@@ -21,6 +21,7 @@ pub fn status_to_dict(status: &rusvm::Status, py: Python<'_>) -> PyObject {
             rusvm::StatusCode::Optimal => "optimal",
             rusvm::StatusCode::TimeLimit => "time_limit",
             rusvm::StatusCode::Callback => "callback",
+            rusvm::StatusCode::NoStepPossible => "no_step_possible",
         },
     );
     dict.into_py(py)
