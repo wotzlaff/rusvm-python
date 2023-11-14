@@ -937,7 +937,7 @@ dependencies = [
 
 [[package]]
 name = "rusvm"
-version = "0.1.8"
+version = "0.1.10"
 dependencies = [
  "caches",
  "ndarray",
