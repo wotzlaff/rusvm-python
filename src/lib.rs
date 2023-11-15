@@ -1,3 +1,5 @@
+#![feature(trait_upcasting)]
+
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -40,7 +42,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         // prepare callback
         let callback = prepare_callback(py, callback)?;
         // solve problem
-        let result = ::rusvm::smo::solve(
+        let result: ::rusvm::Status = ::rusvm::smo::solve(
             problem.as_ref(),
             kernel.as_mut(),
             &params_smo,
