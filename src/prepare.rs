@@ -160,6 +160,11 @@ pub fn prepare_problem<'a>(
             let problem = rusvm::problem::LSSVM::new(y, extract_params_problem(params)?);
             Ok(Box::new(problem))
         }
+        "poisson" => {
+            check_params(params, vec!["lmbda"].as_slice())?;
+            let problem = rusvm::problem::Poisson::new(y, extract_params_problem(params)?);
+            Ok(Box::new(problem))
+        }
         &_ => {
             return Err(PyValueError::new_err(format!(
                 "unkown problem kind '{kind}'"
