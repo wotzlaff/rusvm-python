@@ -128,15 +128,15 @@ pub fn extract_params_newton(params_dict: Option<&PyDict>) -> PyResult<rusvm::ne
 }
 
 pub fn prepare_problem<'a>(
-    kind: &str,
     y: &'a &[f64],
     params: Option<&PyDict>,
 ) -> PyResult<Box<dyn rusvm::problem::Problem + 'a>> {
+    let kind = extract::<&str>(params, "kind")?.unwrap_or("classification");
     match kind {
         "classification" => {
             check_params(
                 params,
-                vec!["lmbda", "smoothing", "max_asum", "shift"].as_slice(),
+                vec!["kind", "lmbda", "smoothing", "max_asum", "shift"].as_slice(),
             )?;
             let mut problem =
                 rusvm::problem::Classification::new(y, extract_params_problem(params)?);
@@ -148,7 +148,7 @@ pub fn prepare_problem<'a>(
         "regression" => {
             check_params(
                 params,
-                vec!["lmbda", "smoothing", "max_asum", "epsilon"].as_slice(),
+                vec!["kind", "lmbda", "smoothing", "max_asum", "epsilon"].as_slice(),
             )?;
             let mut problem = rusvm::problem::Regression::new(y, extract_params_problem(params)?);
 
@@ -158,12 +158,12 @@ pub fn prepare_problem<'a>(
             Ok(Box::new(problem))
         }
         "lssvm" => {
-            check_params(params, vec!["lmbda"].as_slice())?;
+            check_params(params, vec!["kind", "lmbda"].as_slice())?;
             let problem = rusvm::problem::LSSVM::new(y, extract_params_problem(params)?);
             Ok(Box::new(problem))
         }
         "poisson" => {
-            check_params(params, vec!["lmbda"].as_slice())?;
+            check_params(params, vec!["kind", "lmbda"].as_slice())?;
             let problem = rusvm::problem::Poisson::new(y, extract_params_problem(params)?);
             Ok(Box::new(problem))
         }
