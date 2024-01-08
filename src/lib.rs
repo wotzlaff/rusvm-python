@@ -10,18 +10,17 @@ use prepare::*;
 #[pymodule]
 fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, params_problem = None, params_smo = None, cache_size = 0, callback = None))]
+    #[pyo3(signature = (x, y, params_problem = None, params_smo = None, callback = None))]
     fn solve_smo<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
         params_problem: Option<&PyDict>,
         params_smo: Option<&PyDict>,
-        cache_size: usize,
         callback: Option<&PyAny>,
     ) -> PyResult<PyObject> {
         // get parameters
-        let params_smo = extract_params_smo(params_smo)?;
+        let (params_smo, cache_size) = extract_params_smo(params_smo)?;
         // prepare problem
         let y = y.as_slice()?;
         let problem = prepare_problem(&y, params_problem)?;
@@ -53,18 +52,17 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     }
 
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, params_problem = None, params_newton = None, cache_size = 0, callback = None))]
+    #[pyo3(signature = (x, y, params_problem = None, params_newton = None, callback = None))]
     fn solve_newton<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
         params_problem: Option<&PyDict>,
         params_newton: Option<&PyDict>,
-        cache_size: usize,
         callback: Option<&PyAny>,
     ) -> PyResult<PyObject> {
         // get parameters
-        let params_newton = extract_params_newton(params_newton)?;
+        let (params_newton, cache_size) = extract_params_newton(params_newton)?;
         // prepare problem
         let y = y.as_slice()?;
         let problem = prepare_problem(&y, params_problem)?;
@@ -96,7 +94,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
     }
 
     #[pyfn(m)]
-    #[pyo3(signature = (x, y, params_problem = None, params_smo = None, params_newton = None, cache_size = 0, callback_smo = None, callback_newton = None))]
+    #[pyo3(signature = (x, y, params_problem = None, params_smo = None, params_newton = None, callback_smo = None, callback_newton = None))]
     fn solve_smonewt<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
@@ -104,13 +102,12 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         params_problem: Option<&PyDict>,
         params_smo: Option<&PyDict>,
         params_newton: Option<&PyDict>,
-        cache_size: usize,
         callback_smo: Option<&PyAny>,
         callback_newton: Option<&PyAny>,
     ) -> PyResult<PyObject> {
         // get parameters
-        let params_smo = extract_params_smo(params_smo)?;
-        let params_newton = extract_params_newton(params_newton)?;
+        let (params_smo, cache_size) = extract_params_smo(params_smo)?;
+        let params_newton = extract_params_newton(params_newton)?.0;
         // prepare problem
         let y = y.as_slice()?;
         let problem = prepare_problem(&y, params_problem)?;

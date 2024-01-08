@@ -72,6 +72,7 @@ def main():
             # shrinking_period=1000,
             tol=1e-3,
             # second_order=False,
+            cache_size=n,
         ),
         params_newton=dict(
             verbose=1,
@@ -80,7 +81,6 @@ def main():
             # shrinking_period=10000,
             tol=1e-12,
         ),
-        cache_size=n,
         # callback=callback,
     )
     b = res['b']

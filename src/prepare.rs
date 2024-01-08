@@ -81,10 +81,11 @@ pub fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<rusvm::p
     Ok(params)
 }
 
-pub fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<rusvm::smo::Params> {
+pub fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<(rusvm::smo::Params, usize)> {
     check_params(
         params_dict,
         vec![
+            "cache_size",
             "tol",
             "max_steps",
             "verbose",
@@ -96,6 +97,7 @@ pub fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<rusvm::smo::
         ]
         .as_slice(),
     )?;
+    let cache_size = extract::<usize>(params_dict, "cache_size")?.unwrap_or(0);
 
     let mut params = rusvm::smo::Params::new();
     params.tol = extract::<f64>(params_dict, "tol")?.unwrap_or(params.tol);
@@ -110,21 +112,24 @@ pub fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<rusvm::smo::
     params.shrinking_threshold =
         extract::<f64>(params_dict, "shrinking_threshold")?.unwrap_or(params.shrinking_threshold);
     params.time_limit = extract::<f64>(params_dict, "time_limit")?.unwrap_or(params.time_limit);
-    Ok(params)
+    Ok((params, cache_size))
 }
 
-pub fn extract_params_newton(params_dict: Option<&PyDict>) -> PyResult<rusvm::newton::Params> {
+pub fn extract_params_newton(
+    params_dict: Option<&PyDict>,
+) -> PyResult<(rusvm::newton::Params, usize)> {
     check_params(
         params_dict,
-        vec!["tol", "max_steps", "verbose", "time_limit"].as_slice(),
+        vec!["cache_size", "tol", "max_steps", "verbose", "time_limit"].as_slice(),
     )?;
+    let cache_size = extract::<usize>(params_dict, "cache_size")?.unwrap_or(0);
 
     let mut params = rusvm::newton::Params::new();
     params.tol = extract::<f64>(params_dict, "tol")?.unwrap_or(params.tol);
     params.max_steps = extract::<usize>(params_dict, "max_steps")?.unwrap_or(params.max_steps);
     params.verbose = extract::<usize>(params_dict, "verbose")?.unwrap_or(params.verbose);
     params.time_limit = extract::<f64>(params_dict, "time_limit")?.unwrap_or(params.time_limit);
-    Ok(params)
+    Ok((params, cache_size))
 }
 
 pub fn prepare_problem<'a>(
