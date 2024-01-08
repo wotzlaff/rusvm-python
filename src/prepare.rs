@@ -10,12 +10,13 @@ pub fn status_to_dict(status: &rusvm::Status, py: Python<'_>) -> PyObject {
     let _ = dict.set_item("c", status.c);
     let _ = dict.set_item("ka", &status.ka);
     let _ = dict.set_item("value", status.value);
-    let _ = dict.set_item("violation", status.violation);
-    let _ = dict.set_item("steps", status.steps);
-    let _ = dict.set_item("time", status.time);
-    let _ = dict.set_item(
+    let opt_status = PyDict::new(py);
+    let _ = opt_status.set_item("violation", status.opt_status.violation);
+    let _ = opt_status.set_item("steps", status.opt_status.steps);
+    let _ = opt_status.set_item("time", status.opt_status.time);
+    let _ = opt_status.set_item(
         "status",
-        match status.code {
+        match status.opt_status.code {
             rusvm::StatusCode::Initialized => "initialized",
             rusvm::StatusCode::MaxSteps => "max_steps",
             rusvm::StatusCode::Optimal => "optimal",
@@ -24,6 +25,7 @@ pub fn status_to_dict(status: &rusvm::Status, py: Python<'_>) -> PyObject {
             rusvm::StatusCode::NoStepPossible => "no_step_possible",
         },
     );
+    let _ = dict.set_item("opt_status", opt_status);
     dict.into_py(py)
 }
 
