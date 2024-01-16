@@ -133,7 +133,7 @@ pub fn extract_params_newton(
 }
 
 pub fn prepare_problem<'a>(
-    y: &'a &[f64],
+    y: &'a [f64],
     params: Option<&PyDict>,
 ) -> PyResult<Box<dyn rusvm::problem::Problem + 'a>> {
     let kind = extract::<&str>(params, "kind")?.unwrap_or("classification");

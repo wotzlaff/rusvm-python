@@ -1,10 +1,9 @@
-#![feature(trait_upcasting)]
-
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 mod prepare;
+use ::rusvm::kernel::{cache, gaussian};
 use prepare::*;
 
 #[pymodule]
@@ -22,21 +21,12 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         // get parameters
         let (params_smo, cache_size) = extract_params_smo(params_smo)?;
         // prepare problem
-        let y = y.as_slice()?;
-        let problem = prepare_problem(&y, params_problem)?;
+        let labels = y.as_slice()?;
+        let problem = prepare_problem(&labels, params_problem)?;
         // prepare kernel
         let data = x.as_array();
-        let mut base = Box::new(::rusvm::kernel::gaussian(&data, 1.0));
-        let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
-            if cache_size > 0 {
-                Box::new(::rusvm::kernel::CachedKernel::from(
-                    base.as_mut(),
-                    cache_size,
-                ))
-            } else {
-                base
-            }
-        };
+        let base = gaussian(&data, 1.0);
+        let mut kernel = cache(Box::from(base), cache_size);
         // prepare callback
         let callback = prepare_callback(py, callback)?;
         // solve problem
@@ -64,21 +54,12 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         // get parameters
         let (params_newton, cache_size) = extract_params_newton(params_newton)?;
         // prepare problem
-        let y = y.as_slice()?;
-        let problem = prepare_problem(&y, params_problem)?;
+        let labels = y.as_slice()?;
+        let problem = prepare_problem(&labels, params_problem)?;
         // prepare kernel
         let data = x.as_array();
-        let mut base = Box::new(::rusvm::kernel::gaussian(&data, 1.0));
-        let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
-            if cache_size > 0 {
-                Box::new(::rusvm::kernel::CachedKernel::from(
-                    base.as_mut(),
-                    cache_size,
-                ))
-            } else {
-                base
-            }
-        };
+        let base = gaussian(&data, 1.0);
+        let mut kernel = cache(Box::from(base), cache_size);
         // prepare callback
         let callback = prepare_callback(py, callback)?;
         // solve problem
@@ -109,21 +90,12 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let (params_smo, cache_size) = extract_params_smo(params_smo)?;
         let params_newton = extract_params_newton(params_newton)?.0;
         // prepare problem
-        let y = y.as_slice()?;
-        let problem = prepare_problem(&y, params_problem)?;
+        let labels = y.as_slice()?;
+        let problem = prepare_problem(&labels, params_problem)?;
         // prepare kernel
         let data = x.as_array();
-        let mut base = Box::new(::rusvm::kernel::gaussian(&data, 1.0));
-        let mut kernel: Box<dyn ::rusvm::kernel::Kernel> = {
-            if cache_size > 0 {
-                Box::new(::rusvm::kernel::CachedKernel::from(
-                    base.as_mut(),
-                    cache_size,
-                ))
-            } else {
-                base
-            }
-        };
+        let base = gaussian(&data, 1.0);
+        let mut kernel = cache(Box::from(base), cache_size);
         // prepare callback
         let callback_smo = prepare_callback(py, callback_smo)?;
         let callback_newton = prepare_callback(py, callback_newton)?;
