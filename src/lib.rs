@@ -70,7 +70,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             callback.as_deref(),
         );
         // return results
-        let py_result = status_to_dict(&result, py);
+        let py_result = status_to_dict(&result.status, py);
         Ok(py_result)
     }
 
@@ -112,7 +112,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
             callback_newton.as_deref(),
         );
         // return results
-        let py_result = status_to_dict(&result, py);
+        let py_result = status_to_dict(&result.status, py);
         Ok(py_result)
     }
 
