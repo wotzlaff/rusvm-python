@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 mod prepare;
-use ::rusvm::kernel::{cache, gaussian};
+use ::rusvm::kernel::{cache, gaussian_from_array};
 use prepare::*;
 
 #[pymodule]
@@ -25,7 +25,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let problem = prepare_problem(&labels, params_problem)?;
         // prepare kernel
         let data = x.as_array();
-        let base = gaussian(&data, 1.0);
+        let base = gaussian_from_array(&data, 1.0);
         let mut kernel = cache(Box::from(base), cache_size);
         // prepare callback
         let callback = prepare_callback(py, callback)?;
@@ -58,7 +58,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let problem = prepare_problem(&labels, params_problem)?;
         // prepare kernel
         let data = x.as_array();
-        let base = gaussian(&data, 1.0);
+        let base = gaussian_from_array(&data, 1.0);
         let mut kernel = cache(Box::from(base), cache_size);
         // prepare callback
         let callback = prepare_callback(py, callback)?;
@@ -94,7 +94,7 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         let problem = prepare_problem(&labels, params_problem)?;
         // prepare kernel
         let data = x.as_array();
-        let base = gaussian(&data, 1.0);
+        let base = gaussian_from_array(&data, 1.0);
         let mut kernel = cache(Box::from(base), cache_size);
         // prepare callback
         let callback_smo = prepare_callback(py, callback_smo)?;
