@@ -13,6 +13,6 @@ name = "rusvm"
 crate-type = ["cdylib"]
 
 [dependencies]
-rusvm = { path = "../rusvm" }
+rusvm = "*"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 numpy = "0.20"
