@@ -11,7 +11,10 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 license = "AGPL-3.0-or-later"
-
+dynamic = ["version"]
+dependencies = [
+    'numpy'
+]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
