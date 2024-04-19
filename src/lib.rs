@@ -1,3 +1,5 @@
+#![feature(trait_upcasting)]
+
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;

@@ -984,9 +984,9 @@ dependencies = [
 
 [[package]]
 name = "rusvm"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00616a6d0bb6b2315267351bafd5bf26bb3f21b130f8b27b4f71f0ac9852f634"
+checksum = "027a82cdaea819e33e7dfcc9d20e37955ade9ca5cd1149673be79a6118b7ef2c"
 dependencies = [
  "caches",
  "ndarray",
