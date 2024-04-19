@@ -11,6 +11,7 @@ on:
       - main
     tags:
       - '*'
+    if: "startsWith(github.ref, 'refs/tags/')"
   pull_request:
   workflow_dispatch:
 
@@ -107,7 +108,6 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
     needs: [linux, windows, macos, sdist]
     steps:
       - uses: actions/download-artifact@v3
