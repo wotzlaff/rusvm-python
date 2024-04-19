@@ -1,15 +1,3 @@
-# rusvm
-A Python interface to [rusvm](https://github.com/wotzlaff/rusvm).
-
-## Installation
-```
-pip install rusvm
-```
-
-## Example
-See [simple.py](./examples/simple.py).
-
-```py
 import rusvm
 import numpy as np
 import matplotlib.pyplot as plt
@@ -36,7 +24,7 @@ res = rusvm.solve_smo(
     ),
     params_smo=dict(
         time_limit=1.0,
-    )
+    ),
 )
 print(res['opt_status'])
 a = np.array(res['a']) / lmbda
@@ -51,9 +39,4 @@ yplot = k.dot(a) + res['b']
 # plot training points and decision function
 plt.plot(x, y, 'kx')
 plt.plot(xplot, yplot, 'r')
-```
-
-## Build
-```
-maturin develop --release
-```
+plt.show()
