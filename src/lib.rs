@@ -9,16 +9,16 @@ use ::rusvm::kernel::{cache, gaussian};
 use prepare::*;
 
 #[pymodule]
-fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
+fn rusvm<'py>(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(signature = (x, y, params_problem = None, params_smo = None, callback = None))]
     fn solve_smo<'py>(
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
-        params_problem: Option<&PyDict>,
-        params_smo: Option<&PyDict>,
-        callback: Option<&PyAny>,
+        params_problem: Option<&Bound<'_, PyDict>>,
+        params_smo: Option<&Bound<'_, PyDict>>,
+        callback: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyObject> {
         // get parameters
         let (params_smo, cache_size) = extract_params_smo(params_smo)?;
@@ -49,9 +49,9 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
-        params_problem: Option<&PyDict>,
-        params_newton: Option<&PyDict>,
-        callback: Option<&PyAny>,
+        params_problem: Option<&Bound<'_, PyDict>>,
+        params_newton: Option<&Bound<'_, PyDict>>,
+        callback: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyObject> {
         // get parameters
         let (params_newton, cache_size) = extract_params_newton(params_newton)?;
@@ -82,11 +82,11 @@ fn rusvm<'py>(_py: Python<'py>, m: &'py PyModule) -> PyResult<()> {
         py: Python<'py>,
         x: PyReadonlyArray2<'py, f64>,
         y: PyReadonlyArray1<'py, f64>,
-        params_problem: Option<&PyDict>,
-        params_smo: Option<&PyDict>,
-        params_newton: Option<&PyDict>,
-        callback_smo: Option<&PyAny>,
-        callback_newton: Option<&PyAny>,
+        params_problem: Option<&Bound<'_, PyDict>>,
+        params_smo: Option<&Bound<'_, PyDict>>,
+        params_newton: Option<&Bound<'_, PyDict>>,
+        callback_smo: Option<&Bound<'_, PyAny>>,
+        callback_newton: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<PyObject> {
         // get parameters
         let (params_smo, cache_size) = extract_params_smo(params_smo)?;

@@ -4,13 +4,13 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 pub fn status_to_dict(status: &rusvm::Status, py: Python<'_>) -> PyObject {
-    let dict = PyDict::new(py);
+    let dict = PyDict::new_bound(py);
     let _ = dict.set_item("a", &status.a);
     let _ = dict.set_item("b", status.b);
     let _ = dict.set_item("c", status.c);
     let _ = dict.set_item("ka", &status.ka);
     let _ = dict.set_item("value", status.value);
-    let opt_status = PyDict::new(py);
+    let opt_status = PyDict::new_bound(py);
     let _ = opt_status.set_item("violation", status.opt_status.violation);
     let _ = opt_status.set_item("steps", status.opt_status.steps);
     let _ = opt_status.set_item("time", status.opt_status.time);
@@ -29,11 +29,12 @@ pub fn status_to_dict(status: &rusvm::Status, py: Python<'_>) -> PyObject {
     dict.into_py(py)
 }
 
-pub fn check_params(params: Option<&PyDict>, possible_keys: &[&str]) -> PyResult<()> {
+pub fn check_params(params: Option<&Bound<'_, PyDict>>, possible_keys: &[&str]) -> PyResult<()> {
     match params {
         Some(p) => {
             for key in p.keys() {
-                let key_str = key.str()?.to_str()?;
+                let key_str = key.str()?;
+                let key_str = key_str.to_str()?;
                 if !possible_keys.contains(&key_str) {
                     return Err(PyValueError::new_err(format!(
                         "unkown key '{key_str}' in params"
@@ -47,7 +48,7 @@ pub fn check_params(params: Option<&PyDict>, possible_keys: &[&str]) -> PyResult
 }
 
 pub fn extract<'a, T: pyo3::FromPyObject<'a>>(
-    params: Option<&'a PyDict>,
+    params: Option<&Bound<'a, PyDict>>,
     key: &str,
 ) -> PyResult<Option<T>> {
     match params {
@@ -64,7 +65,9 @@ pub fn extract<'a, T: pyo3::FromPyObject<'a>>(
     }
 }
 
-pub fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<rusvm::problem::Params> {
+pub fn extract_params_problem(
+    params_dict: Option<&Bound<'_, PyDict>>,
+) -> PyResult<rusvm::problem::Params> {
     let mut params = rusvm::problem::Params::new();
     if let Some(lambda) = extract::<f64>(params_dict, "lmbda")? {
         params.lambda = lambda;
@@ -81,7 +84,9 @@ pub fn extract_params_problem(params_dict: Option<&PyDict>) -> PyResult<rusvm::p
     Ok(params)
 }
 
-pub fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<(rusvm::smo::Params, usize)> {
+pub fn extract_params_smo(
+    params_dict: Option<&Bound<'_, PyDict>>,
+) -> PyResult<(rusvm::smo::Params, usize)> {
     check_params(
         params_dict,
         vec![
@@ -116,7 +121,7 @@ pub fn extract_params_smo(params_dict: Option<&PyDict>) -> PyResult<(rusvm::smo:
 }
 
 pub fn extract_params_newton(
-    params_dict: Option<&PyDict>,
+    params_dict: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<(rusvm::newton::Params, usize)> {
     check_params(
         params_dict,
@@ -134,10 +139,10 @@ pub fn extract_params_newton(
 
 pub fn prepare_problem<'a>(
     y: &'a [f64],
-    params: Option<&PyDict>,
+    params: Option<&Bound<'_, PyDict>>,
 ) -> PyResult<Box<dyn rusvm::problem::Problem + 'a>> {
-    let kind = extract::<&str>(params, "kind")?.unwrap_or("classification");
-    match kind {
+    let kind = extract::<String>(params, "kind")?.unwrap_or("classification".to_string());
+    match kind.as_str() {
         "classification" => {
             check_params(
                 params,
@@ -182,7 +187,7 @@ pub fn prepare_problem<'a>(
 
 pub fn prepare_callback<'py>(
     py: Python<'py>,
-    callback: Option<&'py PyAny>,
+    callback: Option<&'py Bound<PyAny>>,
 ) -> PyResult<Option<Box<dyn Fn(&rusvm::Status) -> bool + 'py>>> {
     let fun: Box<dyn Fn(&rusvm::Status) -> bool>;
     match callback {
@@ -194,6 +199,7 @@ pub fn prepare_callback<'py>(
             Ok(Some(fun))
         }
         Some(cb) => {
+            let cb = cb.as_any();
             if !cb.is_callable() {
                 return Err(PyValueError::new_err("callback is not callable"));
             } else {

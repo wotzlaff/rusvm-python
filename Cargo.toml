@@ -14,5 +14,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rusvm = "0.2.3"
-pyo3 = { version = "0.20", features = ["extension-module"] }
-numpy = "0.20"
+pyo3 = { version = "0.21.2", features = ["extension-module"] }
+numpy = "0.21"
