@@ -1,9 +1,9 @@
 # rusvm
 A Python interface to [rusvm](https://github.com/wotzlaff/rusvm).
 
-## Build
+## Installation
 ```
-maturin develop --release
+pip install rusvm
 ```
 
 ## Example
@@ -49,4 +49,9 @@ yplot = k.dot(a) + res['b']
 # plot training points and decision function
 plt.plot(x, y, 'kx')
 plt.plot(xplot, yplot, 'r')
+```
+
+## Build
+```
+maturin develop --release
 ```
